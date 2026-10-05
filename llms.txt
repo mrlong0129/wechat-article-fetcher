@@ -1,0 +1,42 @@
+# wechat-article-fetcher
+
+> `wxfetch` is an MIT-licensed Python CLI and library that reads public WeChat Official Account articles (mp.weixin.qq.com) and outputs clean Markdown or JSON (title, account name, author, publish time in ISO 8601 +08:00, cover image, description, Markdown body, plain text, image list, and which extraction method won). Author: Yomin Ma (https://yomin.love, https://github.com/mrlong0129).
+
+Key facts:
+
+- Install: `pip install -e .` from a clone of https://github.com/mrlong0129/wechat-article-fetcher (Python 3.8+, depends on requests, beautifulsoup4, lxml).
+- Zero-install for agents: `uvx --from git+https://github.com/mrlong0129/wechat-article-fetcher wxfetch <url>`. MCP server: `wxfetch-mcp` (tools `fetch_wechat_article`, `parse_wechat_html`). Agent skill: `skill/SKILL.md`; agent instructions: `AGENTS.md`. Sibling project for general web pages: https://github.com/mrlong0129/agent-web-fetch
+- Usage: `wxfetch https://mp.weixin.qq.com/s/<id>`; `-f json`; `-i urls.txt --out-dir out/`; `--download-images`; `--from-html saved.html` for offline parsing.
+- Fetching: requests are sent with WeChat in-app browser User-Agents (iPhone, then Android, then desktop Chrome) plus a WeChat Referer. WeChat's "环境异常 / 去验证" verification page (`wappoc_appmsgcaptcha`, `secitptpage`) is detected and triggers the next UA. The captcha is never solved or bypassed. Deleted, violation and invalid-link pages are reported with a reason code. Retries use exponential backoff, with about 2 s between articles.
+- Extraction: four candidates, and the richest wins.
+  - `js_content`: the `#js_content` DOM, with lazy `data-src` images
+  - `js_content_noencode`: the `content_noencode` JS string in `window.cgiDataNew`, used for text-only posts (`item_show_type` 10)
+  - `picture_page`: the `picture_page_info_list` image list, used for image posts (`item_show_type` 8)
+  - `og_meta`: the `og:title` / `og:description` meta tags; WeChat puts the full body of short text posts into `og:title`
+- Markdown output keeps headings, lists, emphasis, links, images, code blocks and simple tables. It moves punctuation outside `**` so bold renders in CJK text, and writes line breaks inside a paragraph as two-space hard breaks.
+- Images: mmbiz.qpic.cn serves the real image with no Referer or with `https://mp.weixin.qq.com/`. A foreign Referer gets a placeholder image.
+- Limitations:
+  - Public articles only: no login, paid, fans-only or deleted content.
+  - Outside WeChat, long `?__biz=` links are almost always challenged; use the short `/s/<id>` link.
+  - WeChat may tighten detection at any time.
+  - No JavaScript execution. A Playwright fallback is a possible future extra.
+- Intended use: personal reading, note-taking and research. Respect copyright and WeChat's Terms of Service, and keep request rates low.
+
+## Docs
+
+- [README](https://github.com/mrlong0129/wechat-article-fetcher/blob/main/README.md): usage, JSON fields, and a "How it works" section (Chinese, with an English summary)
+- [CHANGELOG](https://github.com/mrlong0129/wechat-article-fetcher/blob/main/CHANGELOG.md): release notes
+
+## Source
+
+- [src/wxfetch/fetcher.py](https://github.com/mrlong0129/wechat-article-fetcher/blob/main/src/wxfetch/fetcher.py): URL normalisation, UA fallback, retries
+- [src/wxfetch/pagecheck.py](https://github.com/mrlong0129/wechat-article-fetcher/blob/main/src/wxfetch/pagecheck.py): verification, deleted and error page detection
+- [src/wxfetch/extractor.py](https://github.com/mrlong0129/wechat-article-fetcher/blob/main/src/wxfetch/extractor.py): metadata and the four content candidates
+- [src/wxfetch/render.py](https://github.com/mrlong0129/wechat-article-fetcher/blob/main/src/wxfetch/render.py): HTML to Markdown and plain text renderer
+- [src/wxfetch/cli.py](https://github.com/mrlong0129/wechat-article-fetcher/blob/main/src/wxfetch/cli.py): the `wxfetch` command
+
+## Optional
+
+- [Author blog](https://yomin.love)
+- [Author GitHub](https://github.com/mrlong0129)
+- Related: agent-web-fetch, a general web-reading toolkit for AI agents (coming soon)

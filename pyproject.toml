@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wechat-article-fetcher"
+version = "0.1.0"
+description = "Read public WeChat Official Account (mp.weixin.qq.com) articles as clean Markdown / JSON"
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [{name = "Yomin Ma"}]
+keywords = ["wechat", "weixin", "mp.weixin.qq.com", "公众号", "markdown", "scraper"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Environment :: Console",
+    "Natural Language :: Chinese (Simplified)",
+    "Topic :: Text Processing :: Markup :: Markdown",
+]
+dependencies = [
+    "requests>=2.25",
+    "beautifulsoup4>=4.9",
+    "lxml>=4.6",
+    "mcp>=1.2; python_version >= '3.10'",  # for the optional wxfetch-mcp server
+]
+
+[project.urls]
+Homepage = "https://github.com/mrlong0129/wechat-article-fetcher"
+Repository = "https://github.com/mrlong0129/wechat-article-fetcher"
+Changelog = "https://github.com/mrlong0129/wechat-article-fetcher/blob/main/CHANGELOG.md"
+Blog = "https://yomin.love"
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+wxfetch = "wxfetch.cli:main"
+wxfetch-mcp = "wxfetch.mcp_server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["live: hits the real network (deselect with -m 'not live')"]
+addopts = "-m 'not live'"
