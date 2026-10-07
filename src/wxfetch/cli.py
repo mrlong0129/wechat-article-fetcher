@@ -22,11 +22,13 @@ from .output import slugify, to_json, to_markdown
 
 EPILOG = """\
 examples:
-  wxfetch https://mp.weixin.qq.com/s/<article-id>
-  wxfetch URL1 URL2 -f json -o articles.json
+  wxfetch 'https://mp.weixin.qq.com/s/<article-id>'
+  wxfetch 'https://mp.weixin.qq.com/s?__biz=...&mid=...&idx=...&sn=...&chksm=...'
+  wxfetch 'URL1' 'URL2' -f json -o articles.json
   wxfetch -i urls.txt --out-dir out/ --download-images
   wxfetch --from-html saved_page.html -f json
 
+Quote URLs in the shell: an unquoted & drops every parameter after it.
 exit codes: 0 = all ok, 1 = at least one article failed, 2 = usage error
 """
 
@@ -117,19 +119,32 @@ def main(argv: Optional[List[str]] = None) -> int:
                 art = extract_article(page, url="")
                 art.fetched_with = "local-file"
             else:
-                normalize_url(target)  # fail fast on obviously bad input
-                res = fetch_html(target, profiles=profiles, retries=args.retries,
+                normalized = normalize_url(target)  # fail fast; unwraps a pasted captcha URL
+                res = fetch_html(normalized, profiles=profiles, retries=args.retries,
                                  timeout=args.timeout, session=session)
                 art = extract_article(res.html, url=res.url)
                 art.fetched_with = res.profile
                 logging.getLogger("wxfetch").info("attempts: %s", "; ".join(res.attempts))
+            warning = art.content_warning()
+            if warning:
+                logging.getLogger("wxfetch").warning("%s", warning)
         except InvalidURL as exc:
             _err(f"无效链接 invalid URL: {exc}")
             failures += 1
             continue
         except VerificationRequired as exc:
-            _err(f"需要验证 verification required [{target}]: {exc}\n"
-                 "  提示：稍后再试、换个网络，或用浏览器打开后另存为 HTML 再用 --from-html 解析。")
+            _err(f"需要验证 verification required ({exc.reason}) [{target}]: {exc}")
+            if exc.reason == "verification_page":
+                _err("  提示：这是微信的验证页，不是文章。请在文章显示出来之后再另存为 HTML。")
+            elif exc.reason != "long_link_missing_chksm":
+                # missing-chksm already tells the user which link to paste; the other
+                # reasons are a network / rate-limit signal.
+                _err("  提示：稍后再试、换个网络，或用浏览器打开后另存为 HTML 再用 --from-html 解析。")
+            if args.verbose and exc.attempts:
+                _err("  attempts: " + "; ".join(exc.attempts))
+            issued = getattr(getattr(exc, "captcha", None), "issued_at", None)
+            if args.verbose and issued is not None:
+                _err(f"  poc_token issued {issued.strftime('%Y-%m-%d %H:%M:%S')} UTC+8")
             failures += 1
             continue
         except ArticleUnavailable as exc:

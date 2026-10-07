@@ -44,3 +44,21 @@ def test_fetch_tool_reports_verification(monkeypatch):
     server, _ = _tools()
     d = _call(server, "fetch_wechat_article", {"url": "https://mp.weixin.qq.com/s/ExampleTextPost01"})
     assert d["ok"] is False and d["error"] == "verification_required" and "parse_wechat_html" in d["hint"]
+    assert d["reason"] == "all_profiles_challenged"
+
+
+def test_fetch_tool_reports_missing_chksm(monkeypatch):
+    def boom(url):
+        raise VerificationRequired(
+            "长链接缺少 chksm 参数，微信对这类链接一律要求验证。",
+            reason="long_link_missing_chksm",
+            link_kind="long_no_chksm",
+        )
+
+    monkeypatch.setattr(mcp_server, "_fetch", boom)
+    server, _ = _tools()
+    d = _call(server, "fetch_wechat_article", {"url": "https://mp.weixin.qq.com/s?__biz=AA==&mid=1&idx=1&sn=2"})
+    assert d["ok"] is False and d["error"] == "verification_required"
+    assert d["reason"] == "long_link_missing_chksm"
+    assert d["link_kind"] == "long_no_chksm"
+    assert "chksm" in d["hint"] and "do not retry" in d["hint"]

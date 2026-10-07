@@ -1,6 +1,6 @@
 ---
 name: wechat-article-fetcher
-description: Read public WeChat Official Account articles (微信公众号文章, mp.weixin.qq.com links) as clean Markdown or JSON with title, account name, author and publish time. Use whenever the user shares an mp.weixin.qq.com link or asks to read, summarise or save a 公众号 article. Handles WeChat's "环境异常" verification page by switching to the WeChat in-app client, and reports deleted / violation / verification cases instead of bypassing them.
+description: Read public WeChat Official Account articles (微信公众号文章, mp.weixin.qq.com links) as clean Markdown or JSON with title, account name, author and publish time. Use whenever the user shares an mp.weixin.qq.com link or asks to read, summarise or save a 公众号 article. Reports WeChat's "环境异常" verification page with a reason (missing chksm vs challenged on every profile) instead of bypassing it, and reports deleted or violation pages the same way.
 ---
 
 # Reading WeChat Official Account articles
@@ -8,17 +8,24 @@ description: Read public WeChat Official Account articles (微信公众号文章
 ## 1. Use the tool if you can (zero install, zero config)
 
 ```bash
-uvx --from git+https://github.com/mrlong0129/wechat-article-fetcher wxfetch <url>            # Markdown
-uvx --from git+https://github.com/mrlong0129/wechat-article-fetcher wxfetch <url> -f json    # JSON
+uvx --refresh --from git+https://github.com/mrlong0129/wechat-article-fetcher wxfetch '<url>'            # Markdown
+uvx --refresh --from git+https://github.com/mrlong0129/wechat-article-fetcher wxfetch '<url>' -f json    # JSON
 ```
 
-Or, if installed: `wxfetch <url>`. With the MCP server registered, call `fetch_wechat_article(url)`; for a page saved as HTML, `parse_wechat_html(html)`.
+Quote the URL. An unquoted `&` drops every parameter after it, which turns a good long link into one that is missing `mid` / `sn` / `chksm`. `--refresh` forces older uv to re-fetch the repo. If `fetch_wechat_article` still behaves like an older version, restart the MCP client so it reloads the server.
 
-Exit code `1` means the article could not be read; stderr says why (`需要验证 verification required`, `文章不可用 article unavailable (deleted / violation / invalid_link …)`). Tell the user that reason; do not retry in a loop.
+Or, if installed: `wxfetch '<url>'`. With the MCP server registered, call `fetch_wechat_article(url)`; for a page saved as HTML, `parse_wechat_html(html)`.
+
+A browser address bar that shows `…/mp/wappoc_appmsgcaptcha?poc_token=…&target_url=…` is WeChat's verification page. Pass that whole URL in: wxfetch uses `target_url` and does not send `poc_token` back.
+
+Exit code `1` means the article could not be read; stderr says why (`需要验证 verification required (<reason>)`, `文章不可用 article unavailable (deleted / violation / invalid_link …)`). Tell the user that reason; do not retry in a loop.
+
+- `reason=long_link_missing_chksm`: the long link has no `chksm`. Ask for the full original link or the `/s/<id>` short link. Do not retry and do not invent a `chksm`.
+- `reason=all_profiles_challenged`: a short link or a link that keeps `chksm` was challenged on every profile (likely network or rate limit). Suggest later, another network, or saving the page as HTML.
 
 ## 2. The same method by hand (no tool available)
 
-1. **Use the short link** `https://mp.weixin.qq.com/s/<id>`. Long `?__biz=...&mid=...` links are almost always challenged outside WeChat.
+1. **Use a short link** `https://mp.weixin.qq.com/s/<id>`, or a long link that still has its real `chksm`. A long `?__biz=...&mid=...&idx=...&sn=...` link **without** `chksm` is challenged for every client. Do not keep retrying it and do not invent a `chksm`. Quote the URL (`'...'`).
 2. **Request it as WeChat's in-app browser would** (the pages are built for it):
    ```
    User-Agent: Mozilla/5.0 (iPhone; CPU iPhone OS 18_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 MicroMessenger/8.0.47(0x18002f2f) NetType/WIFI Language/zh_CN
@@ -26,7 +33,7 @@ Exit code `1` means the article could not be read; stderr says why (`需要验�
    Referer: https://mp.weixin.qq.com/
    ```
    A different network egress (your own machine instead of a cloud fetch service) often helps.
-3. **Check what you got.** If the page says `环境异常` / `完成验证后即可继续访问` / `去验证`, it is the verification page: try the Android WeChat UA, then desktop Chrome, once each with a pause of 1–2 s. Never solve the captcha. `该内容已被发布者删除`, `此内容因违规无法查看`, `参数错误` mean the article is gone or the link is bad: stop and report.
+3. **Check what you got.** If the page says `环境异常` / `完成验证后即可继续访问` / `去验证`, or the final URL contains `wappoc_appmsgcaptcha` / `secitptpage`, it is the verification page. Switching to the Android WeChat UA, then desktop Chrome, once each with a pause of 1–2 s, only helps when the challenge depends on the client. If the link is a long link without `chksm`, stop: every client gets the same page. Never solve the captcha and never add a parameter to skip it. `该内容已被发布者删除`, `此内容因违规无法查看`, `参数错误` mean the article is gone or the link is bad: stop and report.
 4. **Extract, richest source first:**
    - Long articles: the `#js_content` element (it is hidden with CSS until JS runs; read it anyway). Images use `data-src`, not `src`.
    - Short text posts (`item_show_type` 10): `#js_content` is empty; the full text is the JS string `content_noencode` inside `window.cgiDataNew` (decode `\x0a`, `\x22`, `&amp;`), and usually also in `og:title`.

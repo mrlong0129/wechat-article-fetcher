@@ -6,7 +6,7 @@ A small CLI and Python library that turns public WeChat Official Account article
 作者 Yomin Ma · 博客 [yomin.love](https://yomin.love) · GitHub [@mrlong0129](https://github.com/mrlong0129) · MIT License
 
 ```bash
-wxfetch https://mp.weixin.qq.com/s/<文章ID>
+wxfetch 'https://mp.weixin.qq.com/s/<文章ID>'
 ```
 
 ## Quick start for agents
@@ -14,12 +14,13 @@ wxfetch https://mp.weixin.qq.com/s/<文章ID>
 零安装、零配置，复制一行就能用（只需要 [uv](https://docs.astral.sh/uv/)）：
 
 ```bash
-# 1) 直接读一篇公众号文章（不安装）
-uvx --from git+https://github.com/mrlong0129/wechat-article-fetcher wxfetch <url>
-uvx --from git+https://github.com/mrlong0129/wechat-article-fetcher wxfetch <url> -f json
+# 1) 直接读一篇公众号文章（不安装）。链接请加引号，避免 shell 把 & 后面的参数吃掉。
+#    --refresh 让旧版 uv 重新拉取仓库。更新后如果 MCP 还是旧行为，重启 MCP 客户端。
+uvx --refresh --from git+https://github.com/mrlong0129/wechat-article-fetcher wxfetch '<url>'
+uvx --refresh --from git+https://github.com/mrlong0129/wechat-article-fetcher wxfetch '<url>' -f json
 
 # 2) Claude Code：一行注册 MCP server（工具：fetch_wechat_article、parse_wechat_html；需要 Python 3.10+）
-claude mcp add wechat-article-fetcher -- uvx --from git+https://github.com/mrlong0129/wechat-article-fetcher wxfetch-mcp
+claude mcp add wechat-article-fetcher -- uvx --refresh --from git+https://github.com/mrlong0129/wechat-article-fetcher wxfetch-mcp
 ```
 
 **Cursor**：写入 `~/.cursor/mcp.json`（全局）或项目里的 `.cursor/mcp.json`：
@@ -29,7 +30,7 @@ claude mcp add wechat-article-fetcher -- uvx --from git+https://github.com/mrlon
   "mcpServers": {
     "wechat-article-fetcher": {
       "command": "uvx",
-      "args": ["--from", "git+https://github.com/mrlong0129/wechat-article-fetcher", "wxfetch-mcp"]
+      "args": ["--refresh", "--from", "git+https://github.com/mrlong0129/wechat-article-fetcher", "wxfetch-mcp"]
     }
   }
 }
@@ -44,6 +45,10 @@ mkdir -p ~/.claude/skills/wechat-article-fetcher && curl -fsSL https://raw.githu
 mkdir -p ~/.cursor/skills/wechat-article-fetcher && curl -fsSL https://raw.githubusercontent.com/mrlong0129/wechat-article-fetcher/main/skill/SKILL.md -o ~/.cursor/skills/wechat-article-fetcher/SKILL.md
 ```
 
+更新代码之后，已经在跑的 MCP server 仍是启动时的那一版，需要重启 MCP 客户端才会换上新代码。
+
+如果粘贴的是浏览器地址栏里的 `…/mp/wappoc_appmsgcaptcha?poc_token=…&target_url=…`（「环境异常 / 去验证」），wxfetch 会自动改用其中的 `target_url`，不会把 `poc_token` 再发给微信。
+
 给编码 Agent 的完整说明见 [AGENTS.md](AGENTS.md)。要读微信以外的网页，用姊妹项目 [agent-web-fetch](https://github.com/mrlong0129/agent-web-fetch)。
 
 ## 功能
@@ -51,7 +56,7 @@ mkdir -p ~/.cursor/skills/wechat-article-fetcher && curl -fsSL https://raw.githu
 - 支持短链接 `https://mp.weixin.qq.com/s/<id>`、长链接 `...?__biz=...&mid=...&idx=...&sn=...`、不带 `https://` 的链接、从网页源码里复制出来带 `&amp;` 的链接
 - 一次多篇，或者从文件 / 标准输入批量读（会自动从一段文字里挑出公众号链接）
 - 输出 Markdown（默认）或 JSON：标题、公众号名、作者、发布时间（北京时间 ISO 8601）、封面、摘要、正文 Markdown、纯文本、图片列表、用了哪种提取方式
-- 被微信的「环境异常 / 去验证」页面挡住时自动换 User-Agent 重试；文章被删、违规、链接错误时直接说明原因
+- 被微信的「环境异常 / 去验证」挡住时：如果是客户端（User-Agent）被拦，会换一个再试；如果是长链接缺了 `chksm`，第一次就说明原因，不再把几种 UA 轮一遍。文章被删、违规、链接错误时直接说明原因
 - 可选 `--download-images`：把图片存到本地并改写 Markdown 里的图片链接
 - 依赖很少：`requests` + `beautifulsoup4` + `lxml`
 
@@ -70,14 +75,17 @@ wxfetch --help
 ## 用法
 
 ```bash
-# 一篇文章 → Markdown 输出到终端
-wxfetch https://mp.weixin.qq.com/s/<文章ID>
+# 一篇文章 → Markdown 输出到终端。链接请加引号。
+wxfetch 'https://mp.weixin.qq.com/s/<文章ID>'
+
+# 长链接要保留 chksm。不加引号时，shell 会在第一个 & 处把链接截断。
+wxfetch 'https://mp.weixin.qq.com/s?__biz=…&mid=…&idx=…&sn=…&chksm=…'
 
 # JSON（单篇输出一个对象，多篇输出数组）
-wxfetch https://mp.weixin.qq.com/s/<文章ID> -f json
+wxfetch 'https://mp.weixin.qq.com/s/<文章ID>' -f json
 
 # 多篇写进一个文件
-wxfetch URL1 URL2 -o articles.md
+wxfetch 'URL1' 'URL2' -o articles.md
 
 # 从文件批量读（每行一个链接，# 开头的行忽略；也可以直接丢一段聊天记录进去）
 wxfetch -i urls.txt --out-dir out/
@@ -86,13 +94,13 @@ wxfetch -i urls.txt --out-dir out/
 wxfetch -i urls.txt --out-dir out/ --download-images
 
 # Markdown 顶部加 YAML front matter（方便 Obsidian / 静态博客）
-wxfetch URL --front-matter -o note.md
+wxfetch 'URL' --front-matter -o note.md
 
 # 解析浏览器里「另存为」的 HTML，不联网
 wxfetch --from-html saved_page.html -f json
 
-# 查看抓取过程：用了哪个 UA、有没有被要求验证
-wxfetch -v URL
+# 查看抓取过程：用了哪个 UA、有没有被要求验证、验证令牌大约是什么时候发出的
+wxfetch -v 'URL'
 ```
 
 | 参数 | 说明 |
@@ -134,6 +142,8 @@ wxfetch -v URL
   "item_show_type": 10,                   // 0 普通图文，10 纯文字短内容，8 图片消息
   "fetched_with": "ios",                  // 哪个 UA 拿到的页面
   "char_count": 140
+  // 正文没有文字、只有图片时，会多一个 warning，例如：
+  // "warning": "正文没有提取到文字，共 12 张图片 (no text extracted; 12 image(s))"
 }
 ```
 
@@ -171,7 +181,7 @@ art = extract_article(open("saved.html", encoding="utf-8").read())  # 离线解�
 
 请求回来的不一定是文章，所以先分类：
 
-- **验证页**：被跳转到 `/mp/wappoc_appmsgcaptcha`，或页面里有 `secitptpage`、「环境异常」「去验证」。这时换下一个 User-Agent，**不去尝试破解验证码**。
+- **验证页**：被跳转到 `/mp/wappoc_appmsgcaptcha`，或页面里有 `secitptpage`、`poc_token`、「环境异常」「去验证」。换 User-Agent 只对「这个客户端被拦」有用。长链接缺 `chksm` 时，第一次就会说明原因，不再把几种 UA 轮一遍。**不去尝试破解验证码，也不补造 `chksm` 之类的参数。**
 - **错误页**：页面里有一个 `weui-msg__title`，写着「该内容已被发布者删除」「此内容因违规无法查看」「参数错误」之类。这种情况换什么方式都没用，直接停下来，把原因告诉用户。
 - **网络错误、限流（429）、服务端错误（5xx）**：同一种方式稍等再试，等待时间指数增长并带随机抖动。
 
@@ -205,14 +215,14 @@ art = extract_article(open("saved.html", encoding="utf-8").read())  # 离线解�
 
 ### 什么时候会失效
 
-- 长链接（`?__biz=...`）在微信客户端以外几乎都会被要求验证，短链接 `/s/<id>` 正常。遇到长链接，在微信里用「复制链接」拿短链接。
+- 长链接如果还带着 `chksm`，可以正常读。被删掉 `chksm` 的长链接（手拼的 `__biz/mid/idx/sn`，或被「去跟踪参数」清掉的链接）一律跳验证页，换 UA 也一样。请用完整原始链接，或在微信里「复制链接」拿 `/s/<id>` 短链接。
 - 微信随时可能收紧检测，现在有效的 User-Agent 以后可能就不灵了。
 - 这时更重的办法是用真实浏览器（比如 Playwright）打开页面。思路始终是：先用最便宜的方法，不行再上更重的。
 
 ## 局限
 
 - **只能读公开文章。** 需要登录、付费、仅粉丝可见、已删除、违规屏蔽的文章都读不到，这个工具也不打算绕过这些限制。
-- **长链接（`?__biz=...`）基本都会被要求验证。** 实测（2026-10）同一篇文章，短链接三种 UA 都能直接读，长链接不管用哪种 UA、哪个入口都会跳到验证页。
+- **缺 `chksm` 的长链接会被要求验证。** 实测（2026-10）同一篇文章：短链接 `/s/<id>`，以及保留了 `chksm` 的长链接，用微信内置浏览器或桌面 Chrome 的 UA 都能直接读到正文。把 `chksm` 删掉之后（手拼的 `__biz/mid/idx/sn`，或被清理跟踪参数的工具处理过），不管用哪种 UA 都会跳到验证页。请粘贴完整的原始链接，或在微信里「复制链接」拿短链接。在 shell 里要给链接加引号，否则 `&` 后面的参数会被截掉。
 - **微信随时可能收紧检测。** 频繁请求、数据中心 IP 也更容易被要求验证。
 - **不执行 JavaScript。** 完全靠脚本渲染的内容（视频号卡片、投票、部分互动组件）不会出现在结果里；视频只保留占位链接。
 - 公众号排版五花八门，转出来的 Markdown 保证可读，不保证和原文排版一模一样。
@@ -238,7 +248,7 @@ pytest -m live      # 可选：真实请求 mp.weixin.qq.com
 - `text_post_trimmed.html`：按真实「纯文字短内容」页面（`item_show_type=10`）的结构精简而成，保留 `cgiDataNew`、`content_noencode`、`og:` 标签、`window.ct` 等关键结构和几个干扰项；正文、公众号名、ID 都换成了占位内容
 - `verify_real.html`：真实的「环境异常」验证页（会话 token 已清除）
 - `error_invalid_param_real.html`：真实的「参数错误」页
-- `long_article_synthetic.html`、`verify_synthetic.html`、`deleted_synthetic.html`、`violation_synthetic.html`、`og_only_synthetic.html`：合成页面
+- `long_article_synthetic.html`、`verify_synthetic.html`、`verify_wechat_ua_synthetic.html`（微信内置浏览器看到的验证页：有 `secitptpage` / `poc_token` / `TCaptcha`，没有「环境异常」这几个字）、`deleted_synthetic.html`、`violation_synthetic.html`、`og_only_synthetic.html`：合成页面
 
 更新记录见 [CHANGELOG.md](CHANGELOG.md)。
 
@@ -248,13 +258,16 @@ pytest -m live      # 可选：真实请求 mp.weixin.qq.com
 
 ```bash
 pip install -e .
-wxfetch https://mp.weixin.qq.com/s/<article-id>                 # Markdown to stdout
-wxfetch URL1 URL2 -f json -o articles.json
+wxfetch 'https://mp.weixin.qq.com/s/<article-id>'               # Markdown to stdout
+wxfetch 'https://mp.weixin.qq.com/s?__biz=…&mid=…&idx=…&sn=…&chksm=…'
+wxfetch 'URL1' 'URL2' -f json -o articles.json
 wxfetch -i urls.txt --out-dir out/ --download-images
 wxfetch --from-html saved_page.html                             # offline
 ```
 
-**How it works.** Requests go out as WeChat's in-app browser (iPhone UA, then Android, then desktop Chrome) with a WeChat `Referer` and `Accept-Language: zh-CN`. Each response is classified first. The "环境异常 / 去验证" captcha page (`wappoc_appmsgcaptcha`, `secitptpage`) moves on to the next UA; nothing tries to solve the captcha. Deleted, removed or invalid-link pages stop with a clear reason. Network errors, 429 and 5xx are retried with exponential backoff. Content is extracted from up to four sources, and the richest one wins:
+Quote every URL. An unquoted `&` truncates the link at the first parameter. `uvx --refresh --from git+https://github.com/mrlong0129/wechat-article-fetcher wxfetch '<url>'` forces older uv to re-fetch the repo; restart the MCP client after an update so it drops the process it already started. A pasted `…/mp/wappoc_appmsgcaptcha?poc_token=…&target_url=…` address is unwrapped to `target_url` (the `poc_token` is not sent back).
+
+**How it works.** Requests go out as WeChat's in-app browser (iPhone UA, then Android, then desktop Chrome) with a WeChat `Referer` and `Accept-Language: zh-CN`. Each response is classified first. The "环境异常 / 去验证" captcha page (`wappoc_appmsgcaptcha`, `secitptpage`, `poc_token`) moves on to the next UA only when the challenge depends on the client. A long link with no `chksm` is challenged for every client, so it is reported immediately and no parameter is invented to get past it. Nothing tries to solve the captcha. Deleted, removed or invalid-link pages stop with a clear reason. Network errors, 429 and 5xx are retried with exponential backoff. Content is extracted from up to four sources, and the richest one wins:
 
 - the `#js_content` DOM, parsed with a real HTML parser, with lazy `data-src` images
 - the `content_noencode` JS string, for text-only posts
@@ -266,7 +279,7 @@ The renderer keeps headings, lists, emphasis, links, images, code and tables. It
 **Limitations.**
 
 - Public articles only: no login, paid, fans-only or deleted content, and no attempt to bypass any of those.
-- Outside WeChat, long `?__biz=` links are almost always challenged; use the short `/s/<id>` share link instead.
+- A long `?__biz=` link that still has its `chksm` parameter can be read. The same link with `chksm` removed (hand-built `__biz` / `mid` / `idx` / `sn`, or a link stripped by a tracking-parameter cleaner) is challenged for every client. Use the full original link, or the short `/s/<id>` link from WeChat's "copy link".
 - WeChat may tighten detection at any time.
 - No JavaScript execution. An optional headless-browser fallback (e.g. Playwright) is a possible future extra.
 

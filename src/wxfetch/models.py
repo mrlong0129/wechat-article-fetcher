@@ -44,8 +44,18 @@ class Article:
     def char_count(self) -> int:
         return len(self.content_text)
 
+    def content_warning(self) -> Optional[str]:
+        """Set when the article has images but no extracted text."""
+        if (self.content_text or "").strip() or not self.images:
+            return None
+        n = len(self.images)
+        return f"正文没有提取到文字，共 {n} 张图片 (no text extracted; {n} image(s))"
+
     def to_dict(self) -> Dict[str, Any]:
         d = asdict(self)
         d["images"] = [img.to_dict() for img in self.images]
         d["char_count"] = self.char_count
+        warning = self.content_warning()
+        if warning:
+            d["warning"] = warning
         return d

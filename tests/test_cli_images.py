@@ -65,3 +65,48 @@ def test_cli_reports_failures(capsys):
 
 def test_cli_no_input(capsys):
     assert main([]) == 2
+
+
+def test_cli_prints_missing_chksm_reason(monkeypatch, capsys):
+    from datetime import datetime, timedelta, timezone
+
+    from wxfetch.errors import VerificationRequired
+    from wxfetch.pagecheck import CaptchaInfo
+
+    issued = datetime(2026, 10, 7, 23, 19, 38, tzinfo=timezone(timedelta(hours=8)))
+
+    def boom(url, **kwargs):
+        raise VerificationRequired(
+            "长链接缺少 chksm 参数，微信对这类链接一律要求验证。",
+            reason="long_link_missing_chksm",
+            link_kind="long_no_chksm",
+            captcha=CaptchaInfo(poc_token="x", issued_at=issued),
+            attempts=["ios#1: verify (redirect)"],
+        )
+
+    monkeypatch.setattr("wxfetch.cli.fetch_html", boom)
+    rc = main(["-v", "https://mp.weixin.qq.com/s?__biz=AA==&mid=1&idx=1&sn=2"])
+    err = capsys.readouterr().err
+    assert rc == 1
+    assert "verification required (long_link_missing_chksm)" in err
+    assert "poc_token issued 2026-10-07 23:19:38 UTC+8" in err
+    assert "稍后再试" not in err
+
+
+def test_image_only_article_warns(tmp_path, capsys, caplog):
+    page = """<!DOCTYPE html><html><head><meta charset="utf-8"></head><body>
+    <div id="js_content"><p><img data-src="https://mmbiz.qpic.cn/mmbiz_png/AAAA/640?wx_fmt=png" alt=""/></p>
+    <img data-src="https://mmbiz.qpic.cn/mmbiz_jpg/BBBB/640?wx_fmt=jpeg" /></div>
+    </body></html>"""
+    path = tmp_path / "images.html"
+    path.write_text(page, encoding="utf-8")
+    with caplog.at_level("WARNING", logger="wxfetch"):
+        rc = main(["--from-html", str(path), "-f", "json"])
+    captured = capsys.readouterr()
+    assert rc == 0
+    data = json.loads(captured.out)
+    assert data["char_count"] == 0
+    assert not data["content_text"].strip()
+    assert len(data["images"]) == 2
+    assert data["warning"] == "正文没有提取到文字，共 2 张图片 (no text extracted; 2 image(s))"
+    assert "共 2 张图片" in caplog.text

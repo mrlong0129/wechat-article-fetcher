@@ -3,6 +3,21 @@
 All notable changes to this project are documented here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] - 2026-10-07
+
+### Fixed
+
+- Captcha-page URLs pasted as input (`/mp/wappoc_appmsgcaptcha?poc_token=…&target_url=…`) are unwrapped to their `target_url`. The `poc_token` is never sent back.
+- Long links missing `chksm` are reported immediately (one request) with reason `long_link_missing_chksm`, instead of cycling User-Agents.
+- A short link, a temporary link, or a long link that still has `chksm`, when challenged on every profile, is reported as `all_profiles_challenged` (likely network or rate limit).
+- Login-session parameters (`key`, `pass_ticket`, `uin`, `exportkey`, and similar) are stripped. A real `chksm` and `scene` are kept. Nothing is added to the URL.
+- Non-article `mp.weixin.qq.com` paths are rejected with a clear error. A long link that lost `mid` / `sn` (often an unquoted `&` in the shell) says to quote the URL.
+- Docs: long links that keep `chksm` work; examples quote URLs; `uvx --refresh`; restart the MCP client after updating; pasted captcha-page URLs are explained.
+
+### Added
+
+- When an article has images but no extracted text, the CLI warns and the JSON / MCP result includes `warning` with the image count.
+
 ## [0.1.0] - 2026-10-06
 
 First public release.
@@ -29,4 +44,5 @@ First public release.
 - Agent-friendly setup: zero-install `uvx --from git+https://github.com/mrlong0129/wechat-article-fetcher wxfetch <url>`, `AGENTS.md`, and an agent skill at `skill/SKILL.md`.
 - `wxfetch-mcp`: a small MCP server (stdio) with the tools `fetch_wechat_article` and `parse_wechat_html`. The MCP SDK is installed automatically on Python 3.10+.
 
+[0.1.1]: https://github.com/mrlong0129/wechat-article-fetcher/releases/tag/v0.1.1
 [0.1.0]: https://github.com/mrlong0129/wechat-article-fetcher/releases/tag/v0.1.0

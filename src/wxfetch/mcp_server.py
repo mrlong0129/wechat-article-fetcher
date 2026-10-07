@@ -20,8 +20,11 @@ from .models import Article
 INSTRUCTIONS = (
     "Read public WeChat Official Account (mp.weixin.qq.com) articles as Markdown. "
     "On failure the result has ok=false and error = verification_required | article_unavailable | "
-    "invalid_url | fetch_error, with WeChat's reason. Never try to solve WeChat's verification captcha; "
-    "tell the user and suggest opening the article in WeChat or saving the page as HTML for parse_wechat_html."
+    "invalid_url | fetch_error. verification_required includes reason: "
+    "long_link_missing_chksm (the long link has no chksm; ask for the full original link or the "
+    "/s/<id> short link; do not retry and do not invent a chksm) or all_profiles_challenged "
+    "(a short link or a link that keeps chksm was challenged on every profile; likely rate limit "
+    "or network; do not loop). Never try to solve WeChat's verification captcha."
 )
 
 
@@ -42,13 +45,28 @@ def _ok(art: Article, fmt: str, max_chars: int) -> dict[str, Any]:
     return d
 
 
+def _verification_hint(exc: VerificationRequired, fetched: bool) -> str:
+    if not fetched or exc.reason == "verification_page":
+        return ("This HTML is WeChat's 环境异常 verification page, not the article. "
+                "Save the page again after it shows the article.")
+    if exc.reason == "long_link_missing_chksm":
+        return ("ask the user for the full original link including &chksm=, "
+                "or the /s/<id> short link; do not retry")
+    return ("WeChat showed its 环境异常 verification page for every client tried. "
+            "Try later or from another network, or open the article in WeChat/a browser, "
+            "save the page as HTML and use parse_wechat_html.")
+
+
 def _err(exc: Exception, fetched: bool = True) -> dict[str, Any]:
     if isinstance(exc, VerificationRequired):
-        hint = ("WeChat showed its 环境异常 verification page for every client tried. Try later or from another network, "
-                "or open the article in WeChat/a browser, save the page as HTML and use parse_wechat_html."
-                if fetched else
-                "This HTML is WeChat's 环境异常 verification page, not the article. Save the page again after it shows the article.")
-        return {"ok": False, "error": "verification_required", "message": str(exc), "hint": hint}
+        return {
+            "ok": False,
+            "error": "verification_required",
+            "reason": exc.reason,
+            "link_kind": exc.link_kind,
+            "message": str(exc),
+            "hint": _verification_hint(exc, fetched),
+        }
     if isinstance(exc, ArticleUnavailable):
         return {"ok": False, "error": "article_unavailable", "reason": exc.reason, "message": exc.message}
     if isinstance(exc, InvalidURL):
@@ -81,7 +99,9 @@ def build_server():
         """Fetch a public WeChat Official Account article (mp.weixin.qq.com/s/...) and return
         title, account_nickname, author, publish_time (+08:00), content_markdown, images and
         extraction_method. format: markdown | text | both. max_chars: truncate content (0 = no limit).
-        On failure returns ok=false with error and reason; never bypass verification pages."""
+        On failure returns ok=false with error and reason (long_link_missing_chksm or
+        all_profiles_challenged). Never bypass verification pages and never invent a chksm.
+        A pasted /mp/wappoc_appmsgcaptcha URL is read via its target_url."""
         try:
             art = await asyncio.to_thread(_fetch, url)
         except (WxFetchError, OSError) as exc:
