@@ -2,11 +2,29 @@
 
 from __future__ import annotations
 
+import base64
 import re
-from typing import Tuple
+import struct
+from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
+from typing import Optional, Tuple
+from urllib.parse import parse_qsl, unquote, urlsplit
 
-VERIFY_URL_MARKERS = ("wappoc_appmsgcaptcha", "secitptpage", "/mp/captcha")
-VERIFY_HTML_MARKERS = ("secitptpage", "wappoc_appmsgcaptcha")
+VERIFY_URL_MARKERS = ("/mp/wappoc_appmsgcaptcha", "secitptpage", "/mp/captcha")
+# ``poc_token`` alone is enough; ``TCaptcha`` only counts together with it (see is_verification).
+VERIFY_HTML_MARKERS = ("secitptpage", "wappoc_appmsgcaptcha", "poc_token")
+
+_CST = timezone(timedelta(hours=8))
+_TOKEN_MIN_TS = 1577836800  # 2020-01-01 UTC
+
+
+@dataclass
+class CaptchaInfo:
+    """What WeChat put on a verification-page URL. Informational only."""
+
+    poc_token: str
+    target_url: Optional[str] = None
+    issued_at: Optional[datetime] = None  # UTC+8 when the token's timestamp is plausible
 
 # (reason code, keywords) – matched against WeChat's own error message.
 UNAVAILABLE_REASONS = [
@@ -30,12 +48,52 @@ def has_article(page: str) -> bool:
     return any(m in page for m in _ARTICLE_MARKERS)
 
 
+def _token_issued_at(token: str) -> Optional[datetime]:
+    """Read the issue time WeChat embeds in ``poc_token`` (bytes 1–4, little-endian).
+
+    Returns None when the token does not decode or the timestamp is outside
+    2020 .. now + 1 day. Used only to explain a failure, never sent back.
+    """
+    if not token:
+        return None
+    try:
+        padded = token + "=" * (-len(token) % 4)
+        raw = base64.urlsafe_b64decode(padded)
+    except (ValueError, TypeError):
+        return None
+    if len(raw) < 5:
+        return None
+    ts = struct.unpack("<I", raw[1:5])[0]
+    if ts < _TOKEN_MIN_TS or ts > datetime.now(timezone.utc).timestamp() + 86400:
+        return None
+    return datetime.fromtimestamp(ts, _CST)
+
+
+def parse_captcha_url(url: str) -> Optional[CaptchaInfo]:
+    """Parse a ``/mp/wappoc_appmsgcaptcha`` (or similar) URL. None if it isn't one."""
+    if not url or not any(m in url for m in VERIFY_URL_MARKERS):
+        return None
+    pairs = parse_qsl(urlsplit(url).query, keep_blank_values=True)
+    data = {k: v for k, v in pairs}
+    token = data.get("poc_token") or ""
+    target = data.get("target_url") or None
+    if target:
+        target = unquote(target)
+    return CaptchaInfo(poc_token=token, target_url=target or None, issued_at=_token_issued_at(token))
+
+
 def is_verification(page: str, final_url: str = "") -> bool:
     if any(m in (final_url or "") for m in VERIFY_URL_MARKERS):
         return True
-    if has_article(page) and 'id="js_content"' in page:
+    # A page that actually has article text is not a captcha, even if a copied
+    # page mentions one of the marker strings.
+    if _has_real_content(page):
         return False
     if any(m in page for m in VERIFY_HTML_MARKERS):
+        return True
+    # TCaptcha is WeChat's widget script. On its own it is not a captcha page;
+    # together with poc_token it is the page served to in-app browsers.
+    if "TCaptcha" in page and "poc_token" in page:
         return True
     return len(page) < 200_000 and "环境异常" in page and ("去验证" in page or "完成验证" in page)
 

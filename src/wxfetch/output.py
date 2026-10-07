@@ -41,6 +41,9 @@ def to_markdown(article: Article, front_matter: bool = False) -> str:
     if meta:
         lines.append("> " + " ｜ ".join(meta))
     lines.append(f"> 原文：{article.canonical_url or article.url}")
+    warning = article.content_warning()
+    if warning:
+        lines.append(f"> {warning}")
     parts.append("\n".join(lines))
     if article.content_markdown:
         parts.append(article.content_markdown)

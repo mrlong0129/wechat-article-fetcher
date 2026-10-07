@@ -12,7 +12,7 @@ from .extractor import extract_article
 from .fetcher import fetch_html, normalize_url
 from .models import Article
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "Article",

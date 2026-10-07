@@ -204,7 +204,7 @@ def extract_article(page: str, url: str = "") -> Article:
     """
     status, message = classify_page(page)
     if status == "verify":
-        raise VerificationRequired(message)
+        raise VerificationRequired(message, reason="verification_page")
     if status == "unavailable":
         reason, msg = message.split(":", 1)
         raise ArticleUnavailable(reason, msg)

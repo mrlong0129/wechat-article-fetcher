@@ -1,9 +1,13 @@
+import base64
 import json
+import struct
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
 from wxfetch import ArticleUnavailable, VerificationRequired, extract_article
 from wxfetch.output import slugify, to_json, to_markdown
+from wxfetch.pagecheck import classify_page, parse_captcha_url
 
 
 # --- trimmed real-structure page: short text-only post (item_show_type 10) -------------
@@ -140,10 +144,48 @@ def test_long_plain_text(long_art):
 
 
 # --- error pages -----------------------------------------------------------------------
-@pytest.mark.parametrize("name", ["verify_real.html", "verify_synthetic.html"])
+@pytest.mark.parametrize("name", ["verify_real.html", "verify_synthetic.html", "verify_wechat_ua_synthetic.html"])
 def test_verification_pages(fixture_html, name):
-    with pytest.raises(VerificationRequired):
+    with pytest.raises(VerificationRequired) as ei:
         extract_article(fixture_html(name))
+    assert ei.value.reason == "verification_page"
+
+
+def test_wechat_ua_captcha_has_no_environment_text(fixture_html):
+    page = fixture_html("verify_wechat_ua_synthetic.html")
+    assert "环境异常" not in page
+    assert "secitptpage" in page and "poc_token" in page and "TCaptcha" in page
+    assert classify_page(page)[0] == "verify"
+
+
+def test_tcaptcha_counts_only_with_poc_token():
+    assert classify_page("<html><script src='https://captcha.gtimg.com/TCaptcha.js'></script></html>")[0] != "verify"
+    assert classify_page("<html><script src='https://captcha.gtimg.com/TCaptcha.js'></script>poc_token='x'</html>")[0] == "verify"
+
+
+def test_article_text_mentioning_poc_token_is_not_captcha():
+    page = '<div id="js_content"><p>正文里出现 poc_token 这个词，但仍然是文章。</p></div>'
+    assert classify_page(page)[0] == "article"
+
+
+def test_parse_captcha_url_reads_issue_time():
+    ts = 1791215991  # 2026-10-05 23:59:51 +08:00, inside the accepted window
+    raw = bytes([0x01]) + struct.pack("<I", ts) + b"\x00" * 8
+    token = base64.urlsafe_b64encode(raw).decode().rstrip("=")
+    info = parse_captcha_url(
+        "https://mp.weixin.qq.com/mp/wappoc_appmsgcaptcha"
+        f"?poc_token={token}&target_url=https%3A%2F%2Fmp.weixin.qq.com%2Fs%2FAbC"
+    )
+    cst = timezone(timedelta(hours=8))
+    assert info is not None
+    assert info.poc_token == token
+    assert info.target_url == "https://mp.weixin.qq.com/s/AbC"
+    assert info.issued_at == datetime.fromtimestamp(ts, cst)
+
+    old = base64.urlsafe_b64encode(bytes([0x01]) + struct.pack("<I", 100)).decode().rstrip("=")
+    stale = parse_captcha_url(f"https://mp.weixin.qq.com/mp/wappoc_appmsgcaptcha?poc_token={old}")
+    assert stale is not None and stale.issued_at is None
+    assert parse_captcha_url("https://mp.weixin.qq.com/s/AbC") is None
 
 
 @pytest.mark.parametrize("name,reason", [

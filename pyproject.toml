@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "wechat-article-fetcher"
-version = "0.1.0"
+version = "0.1.1"
 description = "Read public WeChat Official Account (mp.weixin.qq.com) articles as clean Markdown / JSON"
 readme = "README.md"
 requires-python = ">=3.8"
